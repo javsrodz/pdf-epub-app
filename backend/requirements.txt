@@ -1,0 +1,15 @@
+blinker==1.9.0
+click==8.3.1
+colorama==0.4.6
+EbookLib==0.20
+Flask==3.1.2
+flask-cors==6.0.2
+gunicorn==25.0.3
+itsdangerous==2.2.0
+Jinja2==3.1.6
+lxml==6.0.2
+MarkupSafe==3.0.3
+packaging==26.0
+PyMuPDF==1.26.7
+six==1.17.0
+Werkzeug==3.1.5
