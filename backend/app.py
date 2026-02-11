@@ -9,69 +9,67 @@ from converter import pdf_to_epub
 app = Flask(__name__)
 CORS(app)
 
+# --- NUEVA PROTECCIÓN: Límite de tamaño (16MB) ---
+# Evita que saturen la memoria de tu servidor en Render
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024 
+
 UPLOAD_FOLDER = 'uploads'
-ALLOWED_EXTENSIONS = {'pdf'}
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-def allowed_file(filename):
-    return '.' in filename and \
-        filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-def delete_files_delayed(files, delay=300):
-    """Borra los archivos después de un tiempo (por defecto 5 min)"""
+def delete_files_delayed(files, delay=60):
     def task():
         time.sleep(delay)
         for f in files:
-            try:
-                if os.path.exists(f):
-                    os.remove(f)
-                    print(f"Archivo eliminado: {f}")
-            except Exception as e:
-                print(f"No se pudo borrar {f}: {e}")
-    
+            if os.path.exists(f):
+                try: os.remove(f)
+                except: pass
     threading.Thread(target=task).start()
 
-@app.route('/api/convert', methods=['GET'])
-def health_check():
-    return jsonify({"status": "online", "message": "Servidor activo"}), 200
+# Manejador para archivos demasiado grandes
+@app.errorhandler(413)
+def request_entity_too_large(error):
+    return jsonify({'error': 'El archivo es demasiado grande (máximo 16MB)'}), 413
 
 @app.route('/api/convert', methods=['POST'])
 def convert_file():
-    if 'file' not in request.files:
-        return jsonify({'error': 'Falta el archivo'}), 400
+    input_path = None
+    output_path = None
     
-    file = request.files['file']
-    title = request.form.get('title', file.filename.replace('.pdf', ''))
-    author = request.form.get('author', 'Anónimo')
-
-    if file.filename == '':
-        return jsonify({'error': 'No se seleccionó ningún archivo'}), 400
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No se recibió ningún archivo'}), 400
         
-    if file and allowed_file(file.filename):
-        try:
-            filename = secure_filename(file.filename)
-            input_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            file.save(input_path)
-            
-            output_filename = filename.rsplit('.', 1)[0] + '.epub'
-            output_path = os.path.join(app.config['UPLOAD_FOLDER'], output_filename)
-            
-            pdf_to_epub(input_path, output_path, title, author)
-            
-            delete_files_delayed([input_path, output_path], delay=60) # 60 segundos
-            
-            return send_file(
-                output_path, 
-                as_attachment=True, 
-                download_name=output_filename,
-                mimetype='application/epub+zip'
-            )
+        file = request.files['file']
+        title = request.form.get('title', 'Libro Sin Nombre').strip()
+        author = request.form.get('author', 'Anónimo').strip()
 
-        except Exception as e:
-            return jsonify({'error': f'Error interno: {str(e)}'}), 500
-            
-    return jsonify({'error': 'Tipo de archivo no permitido'}), 400
+        if not file.filename.lower().endswith('.pdf'):
+            return jsonify({'error': 'Formato no soportado. Debe ser PDF'}), 400
 
-if __name__ == '__main__':
-    app.run(debug=True, port=5000, host='0.0.0.0')
+        # Guardado seguro
+        filename = secure_filename(file.filename)
+        input_path = os.path.join(app.config['UPLOAD_FOLDER'], f"in_{int(time.time())}_{filename}")
+        output_path = input_path.replace('.pdf', '.epub')
+        
+        file.save(input_path)
+
+        # Intentar conversión
+        pdf_to_epub(input_path, output_path, title, author)
+        
+        # Limpieza programada
+        delete_files_delayed([input_path, output_path])
+
+        return send_file(output_path, as_attachment=True, download_name=f"{title}.epub")
+
+    except ValueError as ve:
+        # Errores controlados (ej: PDF con contraseña)
+        return jsonify({'error': str(ve)}), 422
+    except Exception as e:
+        # Errores inesperados
+        print(f"ERROR: {e}")
+        return jsonify({'error': 'Ocurrió un error inesperado al procesar el PDF'}), 500
+    finally:
+        # Si hubo un error catastrófico, intentamos limpiar el archivo original
+        if input_path and os.path.exists(input_path) and not os.path.exists(output_path):
+            delete_files_delayed([input_path], delay=10)
