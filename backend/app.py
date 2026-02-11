@@ -22,10 +22,13 @@ def allowed_file(filename):
 @app.route('/api/convert', methods=['POST'])
 def convert_file():
     if 'file' not in request.files:
-        return jsonify({'error': 'No se encontró la parte del archivo'}), 400
+        return jsonify({'error': 'Falta el archivo'}), 400
     
     file = request.files['file']
-    
+
+    title = request.form.get('title', file.filename)
+    author = request.form.get('author', 'Anónimo')
+
     if file.filename == '':
         return jsonify({'error': 'No se seleccionó ningún archivo'}), 400
         
@@ -39,7 +42,7 @@ def convert_file():
             output_path = os.path.join(app.config['UPLOAD_FOLDER'], output_filename)
             
             print(f"Convirtiendo {filename}...")
-            pdf_to_epub(input_path, output_path)
+            pdf_to_epub(input_path, output_path, title, author)
             
             return send_file(output_path, as_attachment=True, download_name=output_filename)
 

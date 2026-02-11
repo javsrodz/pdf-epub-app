@@ -5,7 +5,6 @@ import { registerSW } from 'virtual:pwa-register'
 
 const updateSW = registerSW({
   onNeedRefresh() {
-    // Aquí puedes mostrar una notificación al usuario para que actualice la página
     console.log('Nueva versión disponible. Por favor, actualiza la página.')
   },
   onOfflineReady() {
